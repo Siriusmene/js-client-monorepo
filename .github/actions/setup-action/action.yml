@@ -18,6 +18,13 @@ runs:
       shell: bash
       run: pnpm install --frozen-lockfile
 
+    # actions/cache restores .nx/cache from other runners; Nx rejects those by
+    # default (machine ID mismatch). Allow reuse since this is intentional CI caching.
+    # https://nx.dev/troubleshooting/unknown-local-cache
+    - name: Allow restored Nx local cache
+      shell: bash
+      run: echo "NX_REJECT_UNKNOWN_LOCAL_CACHE=0" >> "$GITHUB_ENV"
+
     - name: Cache nx cache
       uses: actions/cache@v4
       with:
