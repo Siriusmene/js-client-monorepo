@@ -63,6 +63,9 @@ function Content() {
     <div style={{ padding: 16 }}>
       <Logo />
       <div>Render Version: {renderVersion}</div>
+      <div id="pre-trigger-marker" data-testid="pre-trigger-marker">
+        pre-trigger-marker
+      </div>
       <div>
         a_gate: {value ? 'Passing' : 'Failing'} ({details.reason})
       </div>
@@ -127,20 +130,30 @@ function Content() {
   );
 }
 
+export type TriggeredSessionReplayPluginOptions = {
+  autoStartRecording?: boolean;
+  keepRollingWindow?: boolean;
+};
+
 export default function TriggeredSessionReplayExample({
   user,
   values,
+  pluginOptions = {
+    autoStartRecording: false,
+    keepRollingWindow: true,
+  },
 }: {
   user: StatsigUser;
   values: string;
+  pluginOptions?: TriggeredSessionReplayPluginOptions;
 }): React.ReactElement {
   const client = useClientBootstrapInit(DEMO_CLIENT_KEY, user, values, {
     logLevel: LogLevel.Debug,
     plugins: [
       new StatsigTriggeredSessionReplayPlugin({
         rrwebConfig: { blockClass: 'do-not-record' },
-        autoStartRecording: false,
-        keepRollingWindow: true,
+        autoStartRecording: pluginOptions.autoStartRecording ?? false,
+        keepRollingWindow: pluginOptions.keepRollingWindow ?? true,
       }),
       new StatsigAutoCapturePlugin(),
     ],

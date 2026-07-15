@@ -54,6 +54,7 @@ export class TriggeredSessionReplay extends SessionReplayBase {
     events: { event: ReplayEvent; data: ReplaySessionData }[];
   }[] = [];
   private _isActiveRecording = false;
+  private _activeRecordingFromForce = false;
 
   constructor(
     client: PrecomputedEvaluationsInterface,
@@ -61,10 +62,11 @@ export class TriggeredSessionReplay extends SessionReplayBase {
   ) {
     super(client, options);
     this._subscribeToClientEvents(options);
+    if (options?.keepRollingWindow) {
+      this._attemptToStartRollingWindow();
+    }
     if (options?.autoStartRecording) {
       this._attemptToStartRecording(this._options?.forceRecording);
-    } else if (options?.keepRollingWindow) {
-      this._attemptToStartRollingWindow();
     }
   }
 
@@ -82,10 +84,11 @@ export class TriggeredSessionReplay extends SessionReplayBase {
   ): void {
     this._client.$on('values_updated', () => {
       if (!this._wasStopped) {
+        if (options?.keepRollingWindow) {
+          this._attemptToStartRollingWindow();
+        }
         if (options?.autoStartRecording) {
           this._attemptToStartRecording(this._options?.forceRecording);
-        } else if (options?.keepRollingWindow) {
-          this._attemptToStartRollingWindow();
         }
       }
     });
@@ -201,13 +204,50 @@ export class TriggeredSessionReplay extends SessionReplayBase {
 
   public override stopRecording(): void {
     this._isActiveRecording = false;
+    this._activeRecordingFromForce = false;
     this._runningEventData = [];
     super.stopRecording();
   }
 
+  private _demoteActiveRecordingToRollingWindow(): void {
+    if (this._isActiveRecording && this._events.length > 0) {
+      if (_isCurrentlyVisible()) {
+        this._bumpSessionIdleTimerAndLogRecording();
+      } else {
+        this._logRecording();
+      }
+    }
+
+    this._isActiveRecording = false;
+    this._activeRecordingFromForce = false;
+    this._runningEventData = [];
+    if (this._replayer.isRecording()) {
+      this._replayer.stop();
+    }
+    this._currentEventIndex = 0;
+    this._sessionData = {
+      startTime: -1,
+      endTime: 0,
+      clickCount: 0,
+    };
+    StatsigMetadataProvider.add({ isRecordingSession: 'false' });
+    this._attemptToStartRollingWindow();
+  }
+
   private _handleStartActiveRecording(): void {
+    const wasRollingOnly = !this._isActiveRecording;
     this._isActiveRecording = true;
+    if (!wasRollingOnly) {
+      this._runningEventData = [];
+      if (this._replayer.isRecording()) {
+        this._replayer.stop();
+      }
+      return;
+    }
     if (this._runningEventData.length === 0) {
+      if (this._replayer.isRecording()) {
+        this._replayer.stop();
+      }
       return;
     }
     const currentEvents = this._runningEventData.map((e) => e.events).flat();
@@ -228,6 +268,7 @@ export class TriggeredSessionReplay extends SessionReplayBase {
     }
     this._events = currentEvents.map((e) => e.event);
     this._currentEventIndex = currentEvents.length;
+    this._runningEventData = [];
     if (_isCurrentlyVisible()) {
       this._bumpSessionIdleTimerAndLogRecording();
     } else {
@@ -239,6 +280,7 @@ export class TriggeredSessionReplay extends SessionReplayBase {
 
   protected override _shutdown(endReason?: EndReason): void {
     this._isActiveRecording = false;
+    this._activeRecordingFromForce = false;
     this._runningEventData = [];
     super._shutdownImpl(endReason);
   }
@@ -277,10 +319,22 @@ export class TriggeredSessionReplay extends SessionReplayBase {
   }
 
   protected _attemptToStartRollingWindow(): void {
+    if (this._totalLogs >= MAX_LOGS) {
+      return;
+    }
     const values = this._client.getContextHandle().values;
+
+    if (values?.recording_blocked === true) {
+      this._shutdown();
+      return;
+    }
 
     if (values?.passes_session_recording_targeting === false) {
       this._shutdown();
+      return;
+    }
+
+    if (this._isActiveRecording) {
       return;
     }
 
@@ -310,13 +364,38 @@ export class TriggeredSessionReplay extends SessionReplayBase {
     }
 
     if (!force && values?.can_record_session !== true) {
-      this._shutdown();
-      return;
+      const keepRollingWindow = (
+        this._options as TriggeredSessionReplayOptions | undefined
+      )?.keepRollingWindow;
+      if (keepRollingWindow && !this._isActiveRecording) {
+        return;
+      }
+      if (keepRollingWindow && this._isActiveRecording) {
+        if (this._activeRecordingFromForce) {
+          if (this._replayer.isRecording()) {
+            return;
+          }
+        } else {
+          this._demoteActiveRecordingToRollingWindow();
+          return;
+        }
+      } else {
+        this._shutdown();
+        return;
+      }
     }
 
     if (values?.passes_session_recording_targeting === false) {
       this._shutdown();
       return;
+    }
+
+    if (this._isActiveRecording && this._replayer.isRecording()) {
+      return;
+    }
+
+    if (force) {
+      this._activeRecordingFromForce = true;
     }
 
     this._handleStartActiveRecording();
