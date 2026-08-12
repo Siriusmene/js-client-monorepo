@@ -3,8 +3,7 @@ name: Scheduler
 on:
   workflow_dispatch:
   schedule:
-    # Scheduled workflow owner: devops-bot-amplitude
-    - cron: '0 9,17 * * 1-5'
+    - cron: '0 9,17 * * 1,2,3,4,5'
 
 jobs:
   trigger-runs:
