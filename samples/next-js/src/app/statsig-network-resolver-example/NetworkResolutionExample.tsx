@@ -62,6 +62,10 @@ export default function NetworkResolutionExample(): React.ReactElement {
     },
     {
       networkConfig: {
+        // Uncomment to exercise failover from a custom primary api, the
+        // combination the custom-proxy docs recommend. `.example` never
+        // resolves, so both endpoints fail over to the urls below.
+        // api: 'https://my-dead-proxy.example/v1',
         initializeFallbackUrls: ['https://api.statsig.com/v1/initialize'],
         logEventFallbackUrls: ['https://api.statsig.com/v1/log_event'],
       },

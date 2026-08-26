@@ -58,10 +58,6 @@ export class NetworkFallbackResolver {
     sdkKey: string,
     urlConfig: UrlConfiguration,
   ): string | null {
-    if (urlConfig.customUrl != null && urlConfig.fallbackUrls != null) {
-      return null;
-    }
-
     let info = this._fallbackInfo;
     if (info == null) {
       info = _readFallbackInfoFromCache(sdkKey) ?? {};

@@ -87,17 +87,6 @@ describe('Url Fallbacks Via StatsigOptions', () => {
       expect(dnsCalls).toBe(0);
     });
 
-    it('returns the first available fallback url', async () => {
-      const urlConfig = new UrlConfiguration(Endpoint._initialize, null, null, [
-        'https://my-custom-proxy.com/v1/initialize',
-      ]);
-
-      await resolveAgainstConfig(urlConfig);
-
-      const url = resolver.getActiveFallbackUrl(SDK_KEY, urlConfig);
-      expect(url).toBe('https://my-custom-proxy.com/v1/initialize');
-    });
-
     it('returns fallback URL when a custom URL is requested', () => {
       const urlConfig = new UrlConfiguration(
         Endpoint._initialize,
@@ -118,5 +107,57 @@ describe('Url Fallbacks Via StatsigOptions', () => {
       const result = resolver.getActiveFallbackUrl(SDK_KEY, urlConfig);
       expect(result).toBe('https://fallback.example.com/v1/initialize');
     });
+  });
+
+  describe('serving provided fallback urls', () => {
+    const CUSTOM_API = 'https://my-statsig-proxy.com/v1';
+
+    const expectServesFallback = async (
+      endpoint: Endpoint,
+      customUrl: string | null,
+      customApi: string | null,
+    ) => {
+      const fallbackUrl = `https://my-proxy-cache.com/v1/${endpoint}`;
+      const urlConfig = new UrlConfiguration(endpoint, customUrl, customApi, [
+        fallbackUrl,
+      ]);
+
+      const stored = await resolver.tryFetchUpdatedFallbackInfo(
+        SDK_KEY,
+        urlConfig,
+        'Failed to fetch',
+        false,
+      );
+
+      expect(stored).toBe(true);
+      expect(resolver.getActiveFallbackUrl(SDK_KEY, urlConfig)).toBe(
+        fallbackUrl,
+      );
+    };
+
+    // `api` and `initializeUrl` both land in UrlConfiguration.customUrl, so a
+    // provided fallback must be served no matter how the primary was configured.
+    const primaries = [
+      { name: 'the default api', customUrl: null, customApi: null },
+      { name: 'a custom api', customUrl: null, customApi: CUSTOM_API },
+      {
+        name: 'a custom url',
+        customUrl: `${CUSTOM_API}/${Endpoint._initialize}`,
+        customApi: null,
+      },
+    ];
+
+    it.each(primaries)(
+      'serves the fallback when the primary is $name',
+      ({ customUrl, customApi }) =>
+        expectServesFallback(Endpoint._initialize, customUrl, customApi),
+    );
+
+    // One fallback option per endpoint: initializeFallbackUrls,
+    // logEventFallbackUrls and downloadConfigSpecsFallbackUrls.
+    it.each(Object.values(Endpoint))(
+      'serves the %s fallback when a custom api is set',
+      (endpoint) => expectServesFallback(endpoint, null, CUSTOM_API),
+    );
   });
 });
